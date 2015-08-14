@@ -7,6 +7,8 @@ import operator
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.feature_selection import  SelectKBest, f_classif
+import matplotlib.pyplot as plt
 from sklearn.cross_validation import KFold
 from sklearn import cross_validation
 
@@ -21,14 +23,14 @@ title_maping = {"Mr": 1, "Miss": 2, "Mrs": 3, "Master": 4, "Dr": 5, "Rev":
 family_id_mapping = {}
 
 algorithms = [
-    [GradientBoostingClassifier(random_state=1, n_estimators=25, max_depth=3),
+    [GradientBoostingClassifier(random_state=1, n_estimators=30, max_depth=3),
      ["Pclass", "Sex", "Age", "Fare", "Embarked", "FamilySize", "Title", "FamilyId"]],
     [LogisticRegression(random_state=1),
      ["Pclass", "Sex", "Age", "Fare", "Embarked", "FamilySize", "Title", "FamilyId"]],
-    [RandomForestClassifier(random_state=1, n_estimators=100, min_samples_split=8, min_samples_leaf=4),
+    [RandomForestClassifier(random_state=1, n_estimators=10),
      ["Pclass", "Sex", "Age", "Fare", "Embarked", "FamilySize", "Title", "FamilyId"]]
 ]
-
+predictions = []
 
 def get_title(name):
     title_search = re.search(' ([A-Za-z]+)\.', name)
@@ -59,7 +61,7 @@ def set_data(dataset, title_maping):
     dataset.loc[dataset["Embarked"] == "Q", "Embarked"] = 2
     dataset["FamilySize"] = dataset["SibSp"] + dataset["Parch"]
     dataset["NameLength"] = dataset["Name"].apply(lambda x: len(x))
-    titles = titanic["Name"].apply(get_title)
+    titles = dataset["Name"].apply(get_title)
     for k, v in title_maping.items():
         titles[titles == k] = v
     dataset["Title"] = titles
@@ -67,17 +69,24 @@ def set_data(dataset, title_maping):
     family_ids[dataset["FamilySize"] < 3] = -1
     dataset["FamilyId"] = family_ids
 
+def select_parameter():
+    selector = SelectKBest(f_classif, k=5)
+    selector.fit(titanic[predictors], titanic["Survived"])
+    scores = -numpy.log10(selector.pvalues_)
+    plt.bar(range(len(predictors)), scores)
+    plt.xticks(range(len(predictors)), predictors, rotation='vertical')
+    plt.show()
 
 
 def predict(algorithms, train, test):
     full_predictions = []
     for alg, predictors in algorithms:
-        alg.fit(titanic[predictors], train["Survived"])
-        predictions = alg.predict_proba(train[predictors].astype(float))[:, 1]
+        alg.fit(train[predictors], train["Survived"])
+        predictions = alg.predict_proba(test[predictors].astype(float))[:, 1]
         full_predictions.append(predictions)
         # scores = cross_validation.cross_val_score(alg, train[predictors], train["Survived"], cv=3)
         # print(scores.mean())
-    predictions = (full_predictions[0] * 3 + full_predictions[1] + full_predictions[2] * 0) / 4 #各算法权重
+    predictions = full_predictions[0]  # 各算法权重
     predictions[predictions <= .5] = 0
     predictions[predictions > .5] = 1
     predictions = predictions.astype(int)
@@ -88,10 +97,18 @@ set_data(titanic, title_maping)
 set_data(test, title_maping)
 test["Fare"] = test["Fare"].fillna(test["Fare"].median())
 
+select_parameter()
+
 predictions = predict(algorithms, titanic, test)
 
-accuracy = sum(predictions[predictions == titanic["Survived"]]) / len(predictions)
-print(accuracy) #for test
+# accuracy = sum(predictions[predictions == titanic["Survived"]]) / len(predictions)
+# print(accuracy)  # for test
+
+bench = pandas.read_csv("submission0.csv")
+
+acc = sum(predictions[predictions == bench["Survived"]]) / len(predictions)
+
+print(acc)
 
 submission = pandas.DataFrame({
     "PassengerId": test["PassengerId"],
